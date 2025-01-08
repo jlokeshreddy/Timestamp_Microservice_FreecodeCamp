@@ -1,8 +1,22 @@
 // Init project
 var express = require("express");
 var app = express();
-const bodyParser = require('body-parser')
-const dns = require('dns')
+let mongoose = require('mongoose');
+let bodyParser = require('body-parser');
+const dns = require('dns');
+
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+
+
+const URLSchema = new mongoose.Schema({
+  original_url: {type: String, required: true, unique: true},
+  short_url: {type: String, required: true, unique: true}
+});
+
+let URLModel = mongoose.model("url", URLSchema);
+
+// Middleware function to parse post requests
+app.use("/", bodyParser.urlencoded({ extended: false }));
 
 // Enable CORS for remote testing (from FCC)
 var cors = require("cors");
@@ -71,55 +85,77 @@ app.get('/api/whoami', (req, res) => {
 
   res.json(data);
 })
-const urlDatabase = [];
-let counter = 1;
 
-app.post('/api/shorturl', (req, res) => {
 
-  // URL validation using regex
-  const urlRegex = /^(http|https):\/\/(www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})(\/.*)?$/;
-  if (!urlRegex.test(url)) {
-    return res.json({ error: 'invalid url' });
-  }
-
-  // Extract hostname
-  const hostname = url.replace(/^(http|https):\/\/(www\.)?/, '').split('/')[0];
-
-  // DNS lookup to validate domain
-  dns.lookup(hostname, (err) => {
-    if (err) {
-      return res.json({ error: 'invalid url' });
+app.get('/api/shorturl/:short_url', function(req, res) {
+  let short_url = req.params.short_url;
+  // Find the original url from the database
+  URLModel.findOne({short_url: short_url}).then((foundURL) => {
+    if (foundURL){
+      let original_url = foundURL.original_url;
+      res.redirect(original_url);
+    } else {
+      res.json({message: "The short url does not exist!"});
     }
-
-    // Check if the URL already exists in the database
-    const existingEntry = urlDatabase.find((entry) => entry.original_url === url);
-    if (existingEntry) {
-      return res.json({
-        original_url: existingEntry.original_url,
-        short_url: existingEntry.short_url,
-      });
-    }
-
-    // Add a new entry
-    const newEntry = {
-      original_url: url,
-      short_url: counter++,
-    };
-    urlDatabase.push(newEntry);
-
-    res.json({ original_url: newEntry.original_url, short_url: newEntry.short_url });
   });
-});
+})
 
-// GET endpoint to redirect to the original URL
-app.get('/api/shorturl/:short_url', (req, res) => {
-  const shortUrl = parseInt(req.params.short_url);
-
-  const entry = urlDatabase.find((item) => item.short_url === shortUrl);
-  if (entry) {
-    return res.redirect(entry.original_url);
-  } else {
-    res.json({ error: 'No URL found' });
+// Your first API endpoint
+app.post('/api/shorturl', function(req, res) {
+  let url = req.body.url;
+  // Validate the URL
+  try {
+    urlObj = new URL(url);
+    // Validate DNS Domain
+    dns.lookup(urlObj.hostname, (err, address, family) => {
+      // If the DNS domain does not exist no address returned
+      if (!address){
+        res.json({ error: 'invalid url' })
+      } 
+      // We have a valid URL!
+      else {
+        let original_url = urlObj.href;
+        // Check that URL does not already exist in database 
+        URLModel.findOne({original_url: original_url}).then(
+          (foundURL) => {
+            if (foundURL) {
+              res.json(
+                {
+                  original_url: foundURL.original_url,
+                  short_url: foundURL.short_url
+                })
+          } 
+          // If URL does not exist create a new short url and 
+          // add it to the database
+          else {
+            let short_url = 1;
+            // Get the latest short_url
+            URLModel.find({}).sort(
+              {short_url: "desc"}).limit(1).then(
+                (latestURL) => {
+                if (latestURL.length > 0){
+                  // Increment the latest short url by adding 1
+                  short_url = parseInt(latestURL[0].short_url) + 1;
+                }
+                resObj = {
+                  original_url: original_url,
+                  short_url: short_url
+                }
+                
+                // Create an entry in the database
+                let newURL = new URLModel(resObj);
+                newURL.save();
+                res.json(resObj);
+                }
+            )
+          }
+        })
+      }
+    })
+  }
+  // If the url has an invalid format
+  catch {
+    res.json({ error: 'invalid url' })
   }
 });
 
