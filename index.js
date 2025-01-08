@@ -1,50 +1,58 @@
-// index.js
-// where your node app starts
-
-// init project
+// Init project
 var express = require("express");
 var app = express();
 
-// enable CORS (https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
-// so that your API is remotely testable by FCC
+// Enable CORS for remote testing (from FCC)
 var cors = require("cors");
-app.use(cors({ optionsSuccessStatus: 200 })); // some legacy browsers choke on 204
+app.use(cors({ optionsSuccessStatus: 200 }));  // some legacy browsers choke on 204
 
-// http://expressjs.com/en/starter/static-files.html
+// Serve static files (HTML, CSS, JS)
 app.use(express.static("public"));
 
-// http://expressjs.com/en/starter/basic-routing.html
+// Serve the main index page
 app.get("/", function (req, res) {
   res.sendFile(__dirname + "/views/index.html");
 });
 
-// your first API endpoint...
+// Your first API endpoint to check API health
 app.get("/api/hello", function (req, res) {
   res.json({ greeting: "hello API" });
 });
 
+// API route to handle the date parsing
 app.get("/api/:date?", function (req, res) {
   const { date } = req.params;
   let newDate;
 
-  // If dateString is empty, use the current date/time
+  // If no date is provided, use the current date/time
   if (!date) {
     newDate = new Date();
   } else {
-    newDate = new Date(date); // Parse the given date string
+    // Check if the input is a valid Unix timestamp (13 digits long)
+    if (!isNaN(date) && date.length === 13) {
+      // If it's a Unix timestamp, convert it to Date
+      newDate = new Date(parseInt(date));
+    } else {
+      // Otherwise, try to parse it as a regular date string
+      newDate = new Date(date);
+    }
   }
+
+  // Initialize the result
   let result;
+
   // If the date is invalid (NaN), return an error message
   if (isNaN(newDate.getTime())) {
     result = { error: "Invalid Date" };
   } else {
-    // Return the formatted Unix and UTC date
+    // Otherwise, return the Unix timestamp and UTC date
     result = {
       unix: newDate.getTime(),
       utc: newDate.toUTCString(),
     };
   }
 
+  // Send the result as a JSON response
   res.json(result);
 });
 
